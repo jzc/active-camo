@@ -64,8 +64,6 @@ uniform float thickness;
 uniform float opacity;
 
 void main(void) {
-    // vec2 projection = vNormalVS.xy;
-    // vec2 displacement = displacementScale / vDistToCameraPlane * -1.0 * projection;
     vec2 refraction = (thickness / vDistToCameraPlane * -1.0 * vNormalVS).xy;
     vec2 v = 0.5*(vNDC + vec2(1.0));
     vec4 normalColor = vec4(vec3(0.5) + vNormalMS*0.5, 1.0);
@@ -84,10 +82,10 @@ const camoMaterial = new THREE.ShaderMaterial({
     }
 });
 
-// camo objects are on layer 1
 let hasCamo = [];
 function addCamoObjectToScene(obj) {
     hasCamo.push(obj);
+    // camo objects are on layer 1
     obj.layers.enable(1);
     obj.layers.disable(0);
     scene.add(obj);
@@ -100,14 +98,12 @@ const knot = new THREE.Mesh(
     camoMaterial,
 );
 addCamoObjectToScene(knot);
-
 const icosa = new THREE.Mesh(
     new THREE.IcosahedronGeometry(),
     camoMaterial,
 );
 addCamoObjectToScene(icosa)
 icosa.position.x = 7;
-
 const mobius = new THREE.Mesh(
     new THREE.ParametricGeometry( ParametricGeometries.mobius3d, 25, 25),
     camoMaterial,
@@ -144,7 +140,8 @@ gui.add(config, "toggleCamo").name("toggle camo");
 gui.add(config, "resetCamera").name("reset camera");
 gui.add(camoMaterial.uniforms.opacity, "value", 0, 1, .01).name("opacity").listen();
 gui.add(camoMaterial.uniforms.thickness, "value", 0, .3, .005).name("thickness");
-// gui.add(
+
+// add resize event
 
 window.addEventListener("resize", function() {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -154,26 +151,26 @@ window.addEventListener("resize", function() {
 });
 
 // loop
+
 const controls = new OrbitControls(camera, renderer.domElement);
 function animate(t) {
-    requestAnimationFrame( animate );
+    requestAnimationFrame(animate);
 
-    // state_machine.t = t;
-    // const state = state_machine.state;
-    // state_machine[state](t);
+    // update poses
     mixer.update(clock.getDelta());
+    hasCamo.forEach((camoObj) => {
+	camoObj.rotation.x += .01;
+	camoObj.rotation.y += .02;
+    });
 
+    // draw no camo objects
     camera.layers.disable(1);
     renderer.setRenderTarget(preCamoTarget);
     renderer.render(scene, camera);
     renderer.setRenderTarget(null);
 
+    // draw with camo objects
     camera.layers.enable(1);
-    for (let i = 0; i < hasCamo.length; i++) {
-	hasCamo[i].rotation.x += .01;
-	hasCamo[i].rotation.y += .02;
-    }
-
     renderer.render(scene, camera);
 }
 
