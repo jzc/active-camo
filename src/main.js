@@ -13,7 +13,7 @@ const renderer = new THREE.WebGLRenderer({antialias: true});
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(new THREE.Color(.1, .1, .1));
 document.getElementById("container").appendChild(renderer.domElement);
-camera.position.z = 5;
+camera.position.z = 10;
 
 // setup grid
 
@@ -36,7 +36,6 @@ for (let i = 0; i < apothem*2+1; i++) {
 }
 scene.add(grid);
 grid.position.z = -3;
-console.log(scene.children);
 
 // setup camo material
 const vs = `
@@ -61,25 +60,26 @@ varying vec2 vNDC;
 varying float vDistToCameraPlane;
 
 uniform sampler2D preCamo;
-uniform float displacementScale;
-uniform float blend;
+uniform float thickness;
+uniform float opacity;
 
 void main(void) {
-    vec2 projection = vNormalVS.xy;
-    vec2 displacement = displacementScale / vDistToCameraPlane * -1.0 * projection;
+    // vec2 projection = vNormalVS.xy;
+    // vec2 displacement = displacementScale / vDistToCameraPlane * -1.0 * projection;
+    vec2 refraction = (thickness / vDistToCameraPlane * -1.0 * vNormalVS).xy;
     vec2 v = 0.5*(vNDC + vec2(1.0));
     vec4 normalColor = vec4(vec3(0.5) + vNormalMS*0.5, 1.0);
-    gl_FragColor = mix(texture2D(preCamo, v+displacement), normalColor, blend);
+    gl_FragColor = mix(texture2D(preCamo, v+refraction), normalColor, opacity);
 }
 `;
 
-const preCamoTarget = new THREE.WebGLRenderTarget(1080, 720);
+const preCamoTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
 const camoMaterial = new THREE.ShaderMaterial({
     vertexShader: vs,
     fragmentShader: fs,
     uniforms: {
-	displacementScale: { value: .1 },
-	blend: { value: 0 },
+	thickness: { value: .1 },
+	opacity: { value: 0 },
 	preCamo: { value: preCamoTarget.texture },
     }
 });
@@ -115,62 +115,53 @@ const mobius = new THREE.Mesh(
 addCamoObjectToScene(mobius);
 mobius.position.x = -7;
 
-// loop
+// setup camo animation
 
-const state_machine = {
-    state: "camoOn",
-    t: null,
-    transition_start: null,
-    transition_length: 500,
-    camoOn: function() {},
-    camoOff: function() {},
-    camoOnTransition: function() {
-	const s = this.transition_start;
-	let p = (this.t-s)/(this.transition_length);
-	if (p >= 1) {
-	    this.state = "camoOn";
-	    p = 1;
-	}
-	camoMaterial.uniforms.blend.value = 1-p;
-    },
-    camoOffTransition: function() {
-	const s = this.transition_start;
-	let p = (this.t-s)/(this.transition_length);
-	if (p >= 1) {
-	    this.state = "camoOff";
-	    p = 1;
-	}
-	camoMaterial.uniforms.blend.value = p;
-    },
-    toggleCamo: function() {
-	if (this.state == "camoOn" ||
-	    this.state == "camoOnTransition") {
-	    this.state = "camoOffTransition";
-	    this.transition_start = this.t;
-	} else if (this.state == "camoOff" ||
-		   this.state == "camoOffTransition") {
-	    this.state = "camoOnTransition";
-	    this.transition_start = this.t;
-	} else {
-	    console.log("invalid state");
-	}
-    },
-}
+const duration = .5;
+const blendTrack = new THREE.NumberKeyframeTrack(".value", [0, duration], [0, 1]);
+const blendClip = new THREE.AnimationClip("blend", duration, [blendTrack]);
+const mixer = new THREE.AnimationMixer(camoMaterial.uniforms.opacity);
+const blendAction = mixer.clipAction(blendClip);
+blendAction.setLoop(THREE.LoopOnce);
+blendAction.timeScale = -1;
+blendAction.clampWhenFinished = true;
+const clock = new THREE.Clock();
 
 // setup gui
 
 let gui = new dat.GUI();
-let config = {};
-gui.add(state_machine, "toggleCamo");
+let config = {
+    toggleCamo: function () {
+	blendAction.timeScale *= -1;
+	blendAction.paused = false;
+	blendAction.play();
+    },
+    resetCamera: function() {
+	controls.reset();
+    }
+};
+gui.add(config, "toggleCamo").name("toggle camo");
+gui.add(config, "resetCamera").name("reset camera");
+gui.add(camoMaterial.uniforms.opacity, "value", 0, 1, .01).name("opacity").listen();
+gui.add(camoMaterial.uniforms.thickness, "value", 0, .3, .005).name("thickness");
+// gui.add(
 
+window.addEventListener("resize", function() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    preCamoTarget.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// loop
 const controls = new OrbitControls(camera, renderer.domElement);
 function animate(t) {
     requestAnimationFrame( animate );
-    controls.update();
 
-    state_machine.t = t;
-    const state = state_machine.state;
-    state_machine[state](t);
+    // state_machine.t = t;
+    // const state = state_machine.state;
+    // state_machine[state](t);
+    mixer.update(clock.getDelta());
 
     camera.layers.disable(1);
     renderer.setRenderTarget(preCamoTarget);
